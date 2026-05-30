@@ -18,7 +18,6 @@ local Tabs = {
 }
 
 local Options = Fluent.Options
-local LocalPlayer = game:GetService("Players").LocalPlayer
 
 -- Cấu hình thứ tự Map chuẩn theo hình ảnh hiển thị trong game (World 1 -> World 12)
 local MapList = {
@@ -43,7 +42,7 @@ local currentStage = 1
 do
     Tabs.Main:AddParagraph({
         Title = "Hướng dẫn",
-        Content = "Chọn Map, Stage bắt đầu và Độ khó. Khi xong trận script sẽ tự Leave phòng, chờ 2s rồi Auto Next."
+        Content = "Chọn Map, Stage bắt đầu và Độ khó. Khi hiện bảng kết quả, script sẽ delay 2s rồi tự động Next sang màn mới luôn."
     })
 
     -- Dropdown chọn Map
@@ -99,16 +98,6 @@ do
         remote:FireServer(unpack(args))
     end
 
-    -- Hàm gửi request rời trận đấu khi kết thúc
-    local function fireLeaveBattle()
-        local remote = game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("Utils"):WaitForChild("network"):WaitForChild("RemoteEvent")
-        local args = {
-            "battle_request_leave",
-            LocalPlayer
-        }
-        remote:FireServer(unpack(args))
-    end
-
     -- Vòng lặp chính điều khiển Auto Farm
     task.spawn(function()
         local resultGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("battle"):WaitForChild("Result")
@@ -120,7 +109,7 @@ do
                 -- Kiểm tra trạng thái UI bằng Attribute Open
                 local isOpen = resultGui:GetAttribute("Open")
 
-                -- Nếu GUI chưa mở tức là đang ở Lobby / chưa xong trận -> Vào trận mới
+                -- Nếu GUI kết quả CHƯA MỞ (đang trong trận hoặc game vừa nhận lệnh qua màn mới và đang chuẩn bị load)
                 if not isOpen then
                     local mapName = MapList[currentMapIndex]
                     local diff = Options.Difficulty.Value
@@ -128,34 +117,26 @@ do
                     if mapName then
                         Fluent:Notify({
                             Title = "Auto Farm",
-                            Content = string.format("Đang vào: %s - Màn %d (%s)", mapName, currentStage, diff),
+                            Content = string.format("Đang chuẩn bị vào: %s - Màn %d (%s)", mapName, currentStage, diff),
                             Duration = 3
                         })
                         
                         fireStartBattle(mapName, currentStage, diff)
-                        task.wait(15) -- Chờ load map ổn định
+                        task.wait(10) -- Chờ lệnh fire được xử lý và load màn ổn định
                     end
                 end
 
-                -- Vòng lặp chờ trận đấu kết thúc
+                -- Vòng lặp chờ trận đấu kết thúc (GUI Result hiển thị)
                 while Options.AutoStory.Value do
                     local currentOpenStatus = resultGui:GetAttribute("Open")
 
-                    -- Điều kiện: Nếu bảng kết quả xuất hiện (Open == true)
+                    -- ĐIỀU KIỆN: Khi bảng kết quả xuất hiện (Open == true)
                     if currentOpenStatus == true then
-                        Fluent:Notify({
-                            Title = "Trận đấu kết thúc",
-                            Content = "Đang thực hiện rời phòng...",
-                            Duration = 2
-                        })
-
-                        -- Thực hiện Fire Server lệnh rời phòng
-                        fireLeaveBattle()
                         
-                        -- CƯỚNG CHẾ DELAY 2 GIÂY theo yêu cầu của bạn trước khi tính màn mới
+                        -- CƯỚNG CHẾ DELAY ĐÚNG 2 GIÂY theo yêu cầu trước khi chuyển màn
                         task.wait(2) 
                         
-                        -- Tính toán chuyển màn hoặc chuyển map tiếp theo
+                        -- Tính toán chuyển màn hoặc chuyển sang map mới tiếp theo
                         if currentStage < 7 then
                             currentStage = currentStage + 1
                         else
@@ -167,21 +148,21 @@ do
                             end
                         end
 
-                        -- Cập nhật giao diện Fluent trực quan
+                        -- Cập nhật giao diện Fluent hiển thị trực quan
                         local nextMapName = MapList[currentMapIndex]
                         MapDropdown:SetValue(nextMapName)
                         StageDropdown:SetValue(tostring(currentStage))
 
                         Fluent:Notify({
-                            Title = "Hệ thống chuẩn bị",
-                            Content = string.format("Chuẩn bị tự động vào: %s - Màn %d", nextMapName, currentStage),
+                            Title = "Auto Next",
+                            Content = string.format("Đang tự động chuyển tiếp sang: %s - Màn %d", nextMapName, currentStage),
                             Duration = 4
                         })
 
-                        task.wait(5) -- Chờ hoàn tất dịch chuyển về sảnh chính rồi tiếp tục vòng lặp lớn
+                        task.wait(2) -- Chờ xíu để vòng lặp lớn nhận diện trạng thái và thực hiện fire trận mới
                         break 
                     end
-                    task.wait(1)
+                    task.wait(0.5) -- Kiểm tra liên tục để không bỏ lỡ khoảnh khắc kết thúc trận
                 end
             end
         end
@@ -203,7 +184,7 @@ Window:SelectTab(1)
 
 Fluent:Notify({
     Title = "Fluent GUI",
-    Content = "Đã cập nhật đúng thứ tự Map và lệnh Leave phòng + Delay 2s!",
+    Content = "Đã bỏ lệnh Leave Room! Script sẽ delay 2s rồi Auto Next màn mới thẳng luôn.",
     Duration = 5
 })
 
