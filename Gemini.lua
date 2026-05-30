@@ -18,14 +18,23 @@ local Tabs = {
 }
 
 local Options = Fluent.Options
+local LocalPlayer = game:GetService("Players").LocalPlayer
 
--- Lấy danh sách toàn bộ map từ ReplicatedStorage
-local StoryFolder = game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("Gamemode"):WaitForChild("story")
-local MapList = {}
-for _, map in ipairs(StoryFolder:GetChildren()) do
-    table.insert(MapList, map.Name)
-end
-table.sort(MapList)
+-- Cấu hình thứ tự Map chuẩn theo hình ảnh hiển thị trong game (World 1 -> World 12)
+local MapList = {
+    "Green Planet",    -- World 1
+    "Desert",          -- World 2
+    "Double Dungeon",  -- World 3
+    "Titan City",      -- World 4
+    "Beach Harbor",    -- World 5
+    "Gold District",   -- World 6
+    "Soul Haven",      -- World 7
+    "Realm Seven",     -- World 8
+    "Heroic City",     -- World 9
+    "Magic Kingdom",   -- World 10 (Locked)
+    "The Eclipse",     -- World 11 (Locked)
+    "Rome"             -- World 12 (Locked)
+}
 
 -- Biến quản lý trạng thái farm
 local currentMapIndex = 1
@@ -34,7 +43,7 @@ local currentStage = 1
 do
     Tabs.Main:AddParagraph({
         Title = "Hướng dẫn",
-        Content = "Chọn Map, Stage bắt đầu và Difficulty. Bật Toggle để bắt đầu chạy."
+        Content = "Chọn Map, Stage bắt đầu và Độ khó. Khi xong trận script sẽ tự Leave phòng, chờ 2s rồi Auto Next."
     })
 
     -- Dropdown chọn Map
@@ -42,7 +51,7 @@ do
         Title = "Chọn Bản Đồ (Map)",
         Values = MapList,
         Multi = false,
-        Default = MapList[1] or "",
+        Default = "Green Planet",
     })
 
     -- Dropdown chọn Stage (1 -> 7)
@@ -90,6 +99,16 @@ do
         remote:FireServer(unpack(args))
     end
 
+    -- Hàm gửi request rời trận đấu khi kết thúc
+    local function fireLeaveBattle()
+        local remote = game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("Utils"):WaitForChild("network"):WaitForChild("RemoteEvent")
+        local args = {
+            "battle_request_leave",
+            LocalPlayer
+        }
+        remote:FireServer(unpack(args))
+    end
+
     -- Vòng lặp chính điều khiển Auto Farm
     task.spawn(function()
         local resultGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("battle"):WaitForChild("Result")
@@ -98,10 +117,10 @@ do
             task.wait(1)
             
             if Options.AutoStory.Value then
-                -- Đọc giá trị Attribute bằng :GetAttribute()
+                -- Kiểm tra trạng thái UI bằng Attribute Open
                 local isOpen = resultGui:GetAttribute("Open")
 
-                -- Nếu GUI Result chưa mở (isOpen == false hoặc nil) thì mới vào trận
+                -- Nếu GUI chưa mở tức là đang ở Lobby / chưa xong trận -> Vào trận mới
                 if not isOpen then
                     local mapName = MapList[currentMapIndex]
                     local diff = Options.Difficulty.Value
@@ -114,19 +133,29 @@ do
                         })
                         
                         fireStartBattle(mapName, currentStage, diff)
-                        task.wait(15) -- Chờ load map, tránh spam remote
+                        task.wait(15) -- Chờ load map ổn định
                     end
                 end
 
-                -- Vòng lặp kiểm tra trạng thái kết thúc trận đấu
+                -- Vòng lặp chờ trận đấu kết thúc
                 while Options.AutoStory.Value do
-                    -- Liên tục cập nhật lại trạng thái Attribute
                     local currentOpenStatus = resultGui:GetAttribute("Open")
 
+                    -- Điều kiện: Nếu bảng kết quả xuất hiện (Open == true)
                     if currentOpenStatus == true then
-                        task.wait(2) -- Chờ nhận quà ổn định
+                        Fluent:Notify({
+                            Title = "Trận đấu kết thúc",
+                            Content = "Đang thực hiện rời phòng...",
+                            Duration = 2
+                        })
+
+                        -- Thực hiện Fire Server lệnh rời phòng
+                        fireLeaveBattle()
                         
-                        -- Tính toán màn tiếp theo
+                        -- CƯỚNG CHẾ DELAY 2 GIÂY theo yêu cầu của bạn trước khi tính màn mới
+                        task.wait(2) 
+                        
+                        -- Tính toán chuyển màn hoặc chuyển map tiếp theo
                         if currentStage < 7 then
                             currentStage = currentStage + 1
                         else
@@ -134,22 +163,22 @@ do
                             if currentMapIndex < #MapList then
                                 currentMapIndex = currentMapIndex + 1
                             else
-                                currentMapIndex = 1 -- Quay lại map đầu nếu hết sạch
+                                currentMapIndex = 1 -- Quay lại vòng từ đầu nếu đi hết map
                             end
                         end
 
-                        -- Cập nhật lại giao diện UI của Fluent
+                        -- Cập nhật giao diện Fluent trực quan
                         local nextMapName = MapList[currentMapIndex]
                         MapDropdown:SetValue(nextMapName)
                         StageDropdown:SetValue(tostring(currentStage))
 
                         Fluent:Notify({
-                            Title = "Trận đấu kết thúc",
-                            Content = string.format("Chuẩn bị chuyển sang: %s - Màn %d", nextMapName, currentStage),
-                            Duration = 5
+                            Title = "Hệ thống chuẩn bị",
+                            Content = string.format("Chuẩn bị tự động vào: %s - Màn %d", nextMapName, currentStage),
+                            Duration = 4
                         })
 
-                        task.wait(5) -- Chờ nhảy map ra ngoài sảnh
+                        task.wait(5) -- Chờ hoàn tất dịch chuyển về sảnh chính rồi tiếp tục vòng lặp lớn
                         break 
                     end
                     task.wait(1)
@@ -159,7 +188,7 @@ do
     end)
 end
 
--- Cấu hình SaveManager & InterfaceManager
+-- Khởi chạy SaveManager
 SaveManager:SetLibrary(Fluent)
 InterfaceManager:SetLibrary(Fluent)
 SaveManager:IgnoreThemeSettings()
@@ -174,9 +203,8 @@ Window:SelectTab(1)
 
 Fluent:Notify({
     Title = "Fluent GUI",
-    Content = "Script Auto Farm đã sửa logic Attribute theo ảnh!",
+    Content = "Đã cập nhật đúng thứ tự Map và lệnh Leave phòng + Delay 2s!",
     Duration = 5
 })
 
 SaveManager:LoadAutoloadConfig()
-
